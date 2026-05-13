@@ -19,7 +19,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design rationale.
 cp .env.example .env
 # edit .env and set OPENROUTER_API_KEY
 
-docker compose up --build
+docker compose up --build # On dev systems
+docker compose -f docker-compose.yml up # on prod systems
 ```
 
 - Frontend: http://localhost:3000
