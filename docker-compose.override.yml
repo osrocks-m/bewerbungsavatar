@@ -1,0 +1,22 @@
+# Local development overrides — applied automatically by `docker compose up`.
+# On the VPS run: docker compose -f docker-compose.yml up -d
+services:
+  caddy:
+    profiles:
+      - production  # prevents Caddy from starting locally
+
+  frontend:
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+
+  ai-app:
+    ports:
+      - "8000:8000"
+    environment:
+      - CORS_ORIGINS=["http://localhost:3000"]
+
+  postgres:
+    ports:
+      - "5432:5432"

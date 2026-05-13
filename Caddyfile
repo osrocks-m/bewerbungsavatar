@@ -1,0 +1,4 @@
+bewerbungsavatar.mkempka.de {
+    reverse_proxy /api/* ai-app:8000
+    reverse_proxy /* frontend:3000
+}

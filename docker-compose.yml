@@ -1,21 +1,30 @@
 services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - ai-app
+
   frontend:
     build: ./frontend
-    ports:
-      - "3000:3000"
     volumes:
       - ./frontend:/app
       - /app/node_modules   # keeps container's node_modules isolated from host
       - /app/.next
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_API_URL=
     depends_on:
       - ai-app
 
   ai-app:
     build: ./ai-app
-    ports:
-      - "8000:8000"
     volumes:
       - ./ai-app:/app
       - ./bewerbungen:/app/bewerbungen:ro
@@ -23,7 +32,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://chat:${POSTGRES_PASSWORD:-chat}@postgres:5432/chat
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-qwen/qwen3-32b}
-      - CORS_ORIGINS=["http://localhost:3000"]
+      - CORS_ORIGINS=["https://bewerbungsavatar.mkempka.de"]
       - PYTHONPATH=/app
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - OTEL_SERVICE_NAME=ai-app
@@ -39,8 +48,6 @@ services:
       POSTGRES_DB: chat
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"   # exposed so you can connect with a DB client during development
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U chat"]
       interval: 5s
@@ -81,3 +88,5 @@ volumes:
   postgres_data:
   loki_data:
   tempo_data:
+  caddy_data:
+  caddy_config:
