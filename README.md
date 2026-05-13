@@ -23,7 +23,7 @@ docker compose up --build
 ```
 
 - Frontend: http://localhost:3000
-- AI App + API docs: http://localhost:8000/redoc
+- AI App + API docs: http://localhost:8000/redoc http://localhost:8000/docs
 - PostgreSQL: localhost:5432 (user/db: `chat`, password from `.env`)
 
 ---

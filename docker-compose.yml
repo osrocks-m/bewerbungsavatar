@@ -18,7 +18,7 @@ services:
       - "8000:8000"
     volumes:
       - ./ai-app:/app
-      - ./llmconfig.yaml:/app/llmconfig.yaml:ro
+      - ./bewerbungen:/app/bewerbungen:ro
     environment:
       - DATABASE_URL=postgresql+asyncpg://chat:${POSTGRES_PASSWORD:-chat}@postgres:5432/chat
       - GROQ_API_KEY=${GROQ_API_KEY}
