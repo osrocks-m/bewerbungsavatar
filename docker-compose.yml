@@ -32,7 +32,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://chat:${POSTGRES_PASSWORD:-chat}@postgres:5432/chat
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-qwen/qwen3-32b}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL}
       - CORS_ORIGINS=["https://bewerbungsavatar.mkempka.de"]
       - PYTHONPATH=/app
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
