@@ -100,7 +100,7 @@ async def send_message(
         full_response = ""
 
         try:
-            async for token in stream_graph(body.content, history):
+            async for token in stream_graph(body.content, history, conversation.bewerbung_id):
                 full_response += token
                 yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
 

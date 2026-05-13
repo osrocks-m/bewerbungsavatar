@@ -13,24 +13,89 @@ from .models import Conversation, Message
 
 
 llm = ChatOpenRouter(model=settings.openrouter_model)
+_safeguard_llm = ChatOpenRouter(model="openai/gpt-oss-safeguard-20b")
 
 _BEWERBUNGEN_PATH = Path("/app/bewerbungen")
 _SAFE_ID = re.compile(r"^[a-z0-9-]+$")
 
+_OFF_TOPIC_QUESTION = (
+    "The visitor has asked a question that falls outside the scope of the application documents. "
+    "Respond politely and shortly, saying that as an avatar this is beyond your limits of knowlegde."
+    "Invite the visitor to contact the applicant directly — refer to the phone number and email address listed in the "
+    "Lebenslauf — to schedule an appointment for further discussion."
+)
 
-def build_system_message(bewerbung_id: str) -> SystemMessage:
+
+def _read_bewerbung_docs(bewerbung_id: str) -> tuple[str, str, str]:
+    """Return (lebenslauf, anschreiben, ausschreibung) texts for a bewerbung_id."""
     if not _SAFE_ID.match(bewerbung_id):
         raise ValueError(f"Invalid bewerbung_id: {bewerbung_id!r}")
     base = _BEWERBUNGEN_PATH / bewerbung_id
-    lebenslauf_path = base / "Lebenslauf.md"
-    anschreiben_path = base / "Anschreiben.md"
-    lebenslauf = lebenslauf_path.read_text() if lebenslauf_path.exists() else ""
-    anschreiben = anschreiben_path.read_text() if anschreiben_path.exists() else ""
+    def read(name: str) -> str:
+        p = base / name
+        return p.read_text() if p.exists() else ""
+    return read("Lebenslauf.md"), read("Anschreiben.md"), read("Ausschreibung.md")
+
+
+def _build_safeguard_policy(lebenslauf: str, anschreiben: str, ausschreibung: str) -> str:
+    docs: list[str] = []
+    if lebenslauf:
+        docs.append(f"### Lebenslauf (CV)\n{lebenslauf.strip()}")
+    if anschreiben:
+        docs.append(f"### Anschreiben (Cover Letter)\n{anschreiben.strip()}")
+    if ausschreibung:
+        docs.append(f"### Ausschreibung (Job Posting)\n{ausschreibung.strip()}")
+    doc_block = "\n\n".join(docs) if docs else "(no documents provided)"
+    return f"""\
+You are a topic-scope guardrail for an AI job-application assistant.
+
+INSTRUCTIONS:
+Decide whether the user message can be at least partially answered using the application \
+documents below. Output only "0" or "1". Reasoning: low.
+
+DEFINITIONS:
+"Covered" means the documents contain information relevant to the question (personal background, \
+qualifications, work experience, skills, the advertised position, cover-letter contents, contact \
+details, etc.).
+"Not covered" means the question concerns topics entirely unrelated to the applicant or the job posting.
+
+VIOLATES (1 — not covered):
+- General knowledge questions with no connection to the applicant or position.
+- Requests to generate unrelated content (code, recipes, translations of unrelated text, etc.).
+- Questions about topics not mentioned anywhere in the documents.
+
+SAFE (0 — covered):
+- Questions about the applicant's qualifications, work history, skills, education, or interests.
+- Questions about the advertised position or the hiring organisation as described in the job posting.
+- Requests for contact details or scheduling an appointment.
+- Greetings and small talk manageable in the context of a job-application chat.
+
+EXAMPLES:
+User: "What experience do you have in team leadership?" → 0
+User: "What is the capital of France?" → 1
+User: "Can you tell me more about your approach to language development?" → 0
+User: "Write me a Python script to sort a list." → 1
+User: "What is your availability for an interview?" → 0
+User: "Hi, I am from the hiring team." → 0
+
+Output only: 0 or 1.
+
+---
+APPLICATION DOCUMENTS:
+
+{doc_block}
+"""
+
+
+def build_system_message(bewerbung_id: str) -> SystemMessage:
+    lebenslauf, anschreiben, ausschreibung = _read_bewerbung_docs(bewerbung_id)
     parts = ["You are a helpful assistant representing the person described below."]
     if lebenslauf:
         parts.append(f"## Lebenslauf\n{lebenslauf.strip()}")
     if anschreiben:
         parts.append(f"## Anschreiben\n{anschreiben.strip()}")
+    if ausschreibung:
+        parts.append(f"## Ausschreibung\n{ausschreibung.strip()}")
     return SystemMessage(content="\n\n".join(parts))
 
 
@@ -41,12 +106,14 @@ def build_system_message(bewerbung_id: str) -> SystemMessage:
 class ChatInput(TypedDict):
     question: str
     history: list[BaseMessage]  # pre-loaded from DB by the router, includes system message
+    bewerbung_id: str
 
 
 class ChatState(TypedDict):
     question: str
     history: list[BaseMessage]
     answer: str
+    bewerbung_id: str
 
 
 class ChatOutput(TypedDict):
@@ -56,6 +123,26 @@ class ChatOutput(TypedDict):
 # ---------------------------------------------------------------------------
 # Nodes
 # ---------------------------------------------------------------------------
+
+async def safeguard_node(state: ChatState) -> dict:
+    """
+    Call gpt-oss-safeguard-20b to decide whether the user's question is within
+    the scope of the application documents. Out-of-scope questions are replaced
+    with a prompt that asks the main model to suggest contacting the applicant.
+    Fails open: if the safeguard call errors, the original question is kept.
+    """
+    try:
+        lebenslauf, anschreiben, ausschreibung = _read_bewerbung_docs(state["bewerbung_id"])
+        policy = _build_safeguard_policy(lebenslauf, anschreiben, ausschreibung)
+        response = await _safeguard_llm.ainvoke([
+            SystemMessage(content=policy),
+            HumanMessage(content=state["question"]),
+        ])
+        is_off_topic = str(response.content).strip().startswith("1")
+    except Exception:
+        is_off_topic = False
+    return {"question": _OFF_TOPIC_QUESTION if is_off_topic else state["question"]}
+
 
 def prepare_context_node(state: ChatInput) -> dict:
     return {"history": state["history"] + [HumanMessage(content=state["question"])]}
@@ -73,9 +160,11 @@ async def generate_node(state: ChatState) -> dict:
 
 graph = (
     StateGraph(ChatState, input_schema=ChatInput, output_schema=ChatOutput)
+    .add_node("safeguard", safeguard_node)
     .add_node("prepare_context", prepare_context_node)
     .add_node("generate", generate_node)
-    .add_edge(START, "prepare_context")
+    .add_edge(START, "safeguard")
+    .add_edge("safeguard", "prepare_context")
     .add_edge("prepare_context", "generate")
     .add_edge("generate", END)
     .compile()
@@ -86,18 +175,23 @@ graph = (
 # Streaming helper
 # ---------------------------------------------------------------------------
 
-async def stream_graph(question: str, history: list[BaseMessage]) -> AsyncGenerator[str, None]:
+async def stream_graph(question: str, history: list[BaseMessage], bewerbung_id: str) -> AsyncGenerator[str, None]:
     """
     Yield text tokens as the LLM produces them.
 
-    LangGraph's astream_events() fires an 'on_chat_model_stream' event for
-    every token chunk. We filter to just those and forward the content string.
+    Emits a single emoji once the safeguard node completes (🦜 = on-topic, 🙊 = off-topic),
+    then streams generate-node tokens via on_chat_model_stream events.
     """
     async for event in graph.astream_events(
-        {"question": question, "history": history},
+        {"question": question, "history": history, "bewerbung_id": bewerbung_id},
         version="v2",
     ):
-        if event["event"] == "on_chat_model_stream":
+        node = event.get("metadata", {}).get("langgraph_node", "")
+        if event["event"] == "on_chat_model_end" and node == "safeguard":
+            output = event["data"].get("output")
+            content = str(output.content).strip() if output else ""
+            yield "🙊 " if content.startswith("1") else "🦜 "
+        elif event["event"] == "on_chat_model_stream" and node == "generate":
             chunk = event["data"].get("chunk")
             if chunk and chunk.content:
                 yield chunk.content

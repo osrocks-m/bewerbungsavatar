@@ -20,6 +20,7 @@ from app.llm import stream_graph
 
 async def main() -> None:
     history: list[BaseMessage] = []
+    bewerbung_id = input("Bewerbung ID: ").strip()
     print("Chat started — Ctrl+C or type 'quit' to exit.\n")
 
     while True:
@@ -38,7 +39,7 @@ async def main() -> None:
         print("AI: ", end="", flush=True)
         full_response = ""
 
-        async for token in stream_graph(question, history):
+        async for token in stream_graph(question, history, bewerbung_id):
             print(token, end="", flush=True)
             full_response += token
 
