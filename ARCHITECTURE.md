@@ -29,13 +29,13 @@ A persistent, never-ending chat application backed by a real LLM. Conversations 
 
 ## LLM
 
-Provider: **Groq** (OpenAI-compatible API).  
-LangChain's `ChatOpenAI` is used with `base_url="https://api.groq.com/openai/v1"` — no Groq-specific SDK needed.
+Provider: **OpenRouter** (OpenAI-compatible API).  
+LangChain's `ChatOpenRouter` is used.
 
 Configured via environment variables:
 ```
-GROQ_API_KEY=...
-GROQ_MODEL=llama-3.3-70b-versatile   # default
+OPENROUTER_API_KEY=...
+OPENROUTER_MODEL=qwen/qwen3-32b
 ```
 
 ---
@@ -123,7 +123,7 @@ Add Loki (`http://<tailscale-host-ip>:3100`) and Tempo (`http://<tailscale-host-
 ## Getting Started
 
 ```bash
-# 1. Copy env file and fill in your Groq API key
+# 1. Copy env file and fill in your OpenRouter API key
 cp .env.example .env
 
 # 2. Start everything
@@ -154,7 +154,7 @@ open http://localhost:8000/docs
 │       ├── database.py      # SQLAlchemy async engine + session factory
 │       ├── models.py        # ORM models (Conversation, Message)
 │       ├── schemas.py       # Pydantic request/response schemas
-│       ├── llm.py           # LangChain + Groq, build_context, stream_response, maybe_summarize
+│       ├── llm.py           # LangChain + OpenRouter, build_context, stream_response, maybe_summarize
 │       └── routers/
 │           └── conversations.py
 ├── frontend/                # Next.js — bootstrapped separately from official example

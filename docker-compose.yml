@@ -21,8 +21,8 @@ services:
       - ./bewerbungen:/app/bewerbungen:ro
     environment:
       - DATABASE_URL=postgresql+asyncpg://chat:${POSTGRES_PASSWORD:-chat}@postgres:5432/chat
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-qwen/qwen3-32b}
       - CORS_ORIGINS=["http://localhost:3000"]
       - PYTHONPATH=/app
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317

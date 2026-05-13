@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 from typing import TypedDict, AsyncGenerator
 
-from langchain_groq import ChatGroq
+from langchain_openrouter import ChatOpenRouter
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
 from langgraph.graph import StateGraph, START, END
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +12,7 @@ from .config import settings
 from .models import Conversation, Message
 
 
-llm = ChatGroq(model=settings.groq_model)
+llm = ChatOpenRouter(model=settings.openrouter_model)
 
 _BEWERBUNGEN_PATH = Path("/app/bewerbungen")
 _SAFE_ID = re.compile(r"^[a-z0-9-]+$")

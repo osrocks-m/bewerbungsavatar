@@ -6,7 +6,7 @@ pydantic-settings>=2.6.1
 alembic>=1.14.0
 langchain>=0.3.7
 langchain-core>=0.3.18
-langchain-groq>=0.2.0
+langchain_openrouter
 langgraph>=0.2.0
 opentelemetry-api>=1.29.0
 opentelemetry-sdk>=1.29.0

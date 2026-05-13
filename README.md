@@ -1,6 +1,6 @@
 # LLM Chat
 
-A persistent chat application backed by Groq's LLM API, built as a portfolio project to demonstrate microservice architecture, LangChain integration, and full-stack observability.
+A persistent chat application backed by OpenRouter's LLM API, built as a portfolio project to demonstrate microservice architecture, LangChain integration, and full-stack observability.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design rationale.
 
@@ -9,7 +9,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design rationale.
 ## Prerequisites
 
 - Docker + Docker Compose
-- A [Groq API key](https://console.groq.com)
+- An [OpenRouter API key](https://openrouter.ai/workspaces/default/keys)
 
 ---
 
@@ -17,7 +17,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design rationale.
 
 ```bash
 cp .env.example .env
-# edit .env and set GROQ_API_KEY
+# edit .env and set OPENROUTER_API_KEY
 
 docker compose up --build
 ```
@@ -96,7 +96,7 @@ Services send telemetry to the OTel Collector at `localhost:4317` (OTLP gRPC). T
 │   │   ├── database.py      # SQLAlchemy async engine
 │   │   ├── models.py        # ORM models (Conversation, Message)
 │   │   ├── schemas.py       # Pydantic request/response types
-│   │   ├── llm.py           # Groq via LangChain, summarization logic
+│   │   ├── llm.py           # OpenRouter via LangChain, summarization logic
 │   │   └── routers/
 │   │       └── conversations.py
 │   └── entrypoint.sh        # runs migrations then starts uvicorn
