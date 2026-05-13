@@ -17,6 +17,8 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_URL: ""
+    environment:
+      - LIST_TOKEN=${LIST_TOKEN}
     volumes:
       - ./bewerbungen:/app/bewerbungen:ro
     depends_on:
