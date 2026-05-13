@@ -1,0 +1,83 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules   # keeps container's node_modules isolated from host
+      - /app/.next
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - ai-app
+
+  ai-app:
+    build: ./ai-app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ai-app:/app
+      - ./llmconfig.yaml:/app/llmconfig.yaml:ro
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://chat:${POSTGRES_PASSWORD:-chat}@postgres:5432/chat
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - CORS_ORIGINS=["http://localhost:3000"]
+      - PYTHONPATH=/app
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=ai-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chat}
+      POSTGRES_DB: chat
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"   # exposed so you can connect with a DB client during development
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC — services send telemetry here
+      - "4318:4318"   # OTLP HTTP — alternative protocol
+    depends_on:
+      - loki
+      - tempo
+
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"   # exposed so Grafana on neptun can query logs
+    volumes:
+      - ./observability/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+
+  tempo:
+    image: grafana/tempo:latest
+    ports:
+      - "3200:3200"   # HTTP API — exposed so Grafana on neptun can query traces
+      # 4317 (OTLP gRPC) is intentionally not exposed; otel-collector reaches it internally
+    volumes:
+      - ./observability/tempo-config.yaml:/etc/tempo/config.yaml:ro
+      - tempo_data:/var/tempo
+    command: -config.file=/etc/tempo/config.yaml
+
+volumes:
+  postgres_data:
+  loki_data:
+  tempo_data:

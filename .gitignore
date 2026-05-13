@@ -1,0 +1,18 @@
+**/.env
+**/.env.local
+
+# Node
+node_modules/
+.next/
+.turbo/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
