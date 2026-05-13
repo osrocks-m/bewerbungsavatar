@@ -9,6 +9,8 @@ interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  pending?: boolean;
+  waiting?: boolean;
 }
 
 function getOrCreateClientId(): string {
@@ -49,6 +51,8 @@ export default function BewerbungChat() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [streamingContent, setStreamingContent] = useState("");
+  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -65,13 +69,15 @@ export default function BewerbungChat() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingContent]);
+  }, [messages, streamingContent, waiting]);
 
   async function handleReset() {
     if (sending) return;
     const newClientId = resetClientId();
     setMessages([]);
     setStreamingContent("");
+    setPendingUserMessage(null);
+    setWaiting(false);
     setConversationId(null);
     const id = await getOrCreateConversation(bewerbung, newClientId);
     setConversationId(id);
@@ -81,6 +87,8 @@ export default function BewerbungChat() {
     if (!conversationId || sending) return;
     setSending(true);
     setInput("");
+    setPendingUserMessage(content);
+    setWaiting(true);
 
     const response = await fetch(
       `${API_URL}/api/conversations/${conversationId}/messages`,
@@ -107,9 +115,12 @@ export default function BewerbungChat() {
         if (!line.startsWith("data: ")) continue;
         const event = JSON.parse(line.slice(6));
         if (event.type === "token") {
+          setWaiting(false);
           setStreamingContent((prev) => prev + event.content);
         } else if (event.type === "done") {
           setStreamingContent("");
+          setPendingUserMessage(null);
+          setWaiting(false);
           setMessages(await fetchMessages(conversationId));
         }
       }
@@ -118,9 +129,12 @@ export default function BewerbungChat() {
     setSending(false);
   }
 
-  const allMessages: Message[] = streamingContent
-    ? [...messages, { id: "streaming", role: "assistant", content: streamingContent }]
-    : messages;
+  const allMessages: Message[] = [
+    ...messages,
+    ...(pendingUserMessage ? [{ id: "pending-user", role: "user" as const, content: pendingUserMessage, pending: true }] : []),
+    ...(waiting ? [{ id: "waiting", role: "assistant" as const, content: "", waiting: true }] : []),
+    ...(streamingContent ? [{ id: "streaming", role: "assistant" as const, content: streamingContent }] : []),
+  ];
 
   return (
     <div className="flex flex-col flex-1 bg-zinc-50 dark:bg-zinc-950">
@@ -132,12 +146,22 @@ export default function BewerbungChat() {
           >
             <div
               className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                msg.role === "user"
+                msg.pending
+                  ? "bg-zinc-700 text-zinc-300 italic dark:bg-zinc-300 dark:text-zinc-600"
+                  : msg.role === "user"
                   ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
                   : "bg-white text-zinc-800 border border-zinc-200 dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700"
               }`}
             >
-              {msg.content}
+              {msg.waiting ? (
+                <div className="flex gap-1 items-center h-4">
+                  <span className="w-2 h-2 rounded-full bg-zinc-400 dark:bg-zinc-500 animate-bounce [animation-delay:-0.3s]" />
+                  <span className="w-2 h-2 rounded-full bg-zinc-400 dark:bg-zinc-500 animate-bounce [animation-delay:-0.15s]" />
+                  <span className="w-2 h-2 rounded-full bg-zinc-400 dark:bg-zinc-500 animate-bounce" />
+                </div>
+              ) : (
+                msg.content
+              )}
             </div>
           </div>
         ))}
