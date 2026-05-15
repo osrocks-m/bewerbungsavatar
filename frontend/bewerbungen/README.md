@@ -1,0 +1,1 @@
+Do not remove this folder. It is the internal mount target for the /bewerbungen data.
