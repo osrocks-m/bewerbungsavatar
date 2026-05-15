@@ -16,8 +16,12 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
 
+_log_handler: logging.Handler | None = None
+
+
 def configure_telemetry(app, engine) -> None:
     """Set up traces, metrics, and logs — no-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset."""
+    global _log_handler
     if not os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
         return
 
@@ -36,8 +40,17 @@ def configure_telemetry(app, engine) -> None:
 
     logger_provider = LoggerProvider(resource=resource)
     logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
-    # Bridge Python's standard logging into OTel logs at WARNING and above.
-    logging.getLogger().addHandler(LoggingHandler(logger_provider=logger_provider))
+    _log_handler = LoggingHandler(level=logging.INFO, logger_provider=logger_provider)
 
     FastAPIInstrumentor.instrument_app(app)
     SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
+
+
+def reattach_log_handler() -> None:
+    """Re-attach the OTel log handler after uvicorn replaces the root logger's handlers."""
+    if _log_handler is None:
+        return
+    root = logging.getLogger()
+    if _log_handler not in root.handlers:
+        root.setLevel(logging.INFO)
+        root.addHandler(_log_handler)

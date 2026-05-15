@@ -5,12 +5,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .database import engine
 from .routers import conversations
-from .telemetry import configure_telemetry
+from .telemetry import configure_telemetry, reattach_log_handler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Schema is managed by Alembic (entrypoint.sh runs "alembic upgrade head" before this starts).
+    # Re-attach after uvicorn's logging.config.dictConfig() clears root logger handlers.
+    reattach_log_handler()
     yield
 
 

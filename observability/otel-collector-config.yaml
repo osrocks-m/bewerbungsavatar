@@ -19,7 +19,7 @@ exporters:
       insecure: true
 
   # Logs → local Loki container via OTLP (native Loki 3.x endpoint)
-  otlphttp/loki:
+  otlp_http/loki:
     endpoint: "http://loki:3100/otlp"
     tls:
       insecure: true
@@ -43,7 +43,7 @@ service:
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlphttp/loki]
+      exporters: [otlp_http/loki]
     traces:
       receivers: [otlp]
       processors: [batch]
