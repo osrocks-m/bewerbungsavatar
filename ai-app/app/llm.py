@@ -1,10 +1,12 @@
 import re
 from pathlib import Path
 from typing import TypedDict, AsyncGenerator
+import datetime
 
 from langchain_openrouter import ChatOpenRouter
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
 from langgraph.graph import StateGraph, START, END
+from opentelemetry import trace
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -14,6 +16,7 @@ from .models import Conversation, Message
 
 llm = ChatOpenRouter(model=settings.openrouter_model)
 _safeguard_llm = ChatOpenRouter(model="openai/gpt-oss-safeguard-20b")
+_tracer = trace.get_tracer(__name__)
 
 _BEWERBUNGEN_PATH = Path("/app/bewerbungen")
 _SAFE_ID = re.compile(r"^[a-z0-9-]+$")
@@ -24,6 +27,17 @@ _OFF_TOPIC_QUESTION = (
     "Invite the visitor to contact the applicant directly — refer to the phone number and email address listed in the "
     "Lebenslauf — to schedule an appointment for further discussion."
 )
+
+_MAX_EVENT_CONTENT = 8192
+
+
+def _record_messages(span: trace.Span, messages: list[BaseMessage]) -> None:
+    """Add each message as a span event so the full prompt stack is visible in traces."""
+    for msg in messages:
+        span.add_event(
+            f"gen_ai.{msg.type}.message",
+            {"content": str(msg.content)[:_MAX_EVENT_CONTENT]},
+        )
 
 
 def _read_bewerbung_docs(bewerbung_id: str) -> tuple[str, str, str]:
@@ -89,7 +103,8 @@ APPLICATION DOCUMENTS:
 
 def build_system_message(bewerbung_id: str) -> SystemMessage:
     lebenslauf, anschreiben, ausschreibung = _read_bewerbung_docs(bewerbung_id)
-    parts = ["You are a helpful assistant representing the person described below."]
+    formatted_today = datetime.date.today().strftime("%Y-%m-%d")
+    parts = [f"Today is {formatted_today}. You are a helpful assistant representing the person described below."]
     if lebenslauf:
         parts.append(f"## Lebenslauf\n{lebenslauf.strip()}")
     if anschreiben:
@@ -131,14 +146,18 @@ async def safeguard_node(state: ChatState) -> dict:
     with a prompt that asks the main model to suggest contacting the applicant.
     Fails open: if the safeguard call errors, the original question is kept.
     """
+    is_off_topic = False
     try:
         lebenslauf, anschreiben, ausschreibung = _read_bewerbung_docs(state["bewerbung_id"])
         policy = _build_safeguard_policy(lebenslauf, anschreiben, ausschreibung)
-        response = await _safeguard_llm.ainvoke([
-            SystemMessage(content=policy),
-            HumanMessage(content=state["question"]),
-        ])
-        is_off_topic = str(response.content).strip().startswith("1")
+        messages = [SystemMessage(content=policy), HumanMessage(content=state["question"])]
+        with _tracer.start_as_current_span("gen_ai.safeguard") as span:
+            span.set_attribute("gen_ai.request.model", "openai/gpt-oss-safeguard-20b")
+            _record_messages(span, messages)
+            response = await _safeguard_llm.ainvoke(messages)
+            result = str(response.content).strip()
+            span.add_event("gen_ai.choice", {"content": result})
+            is_off_topic = result.startswith("1")
     except Exception:
         is_off_topic = False
     return {"question": _OFF_TOPIC_QUESTION if is_off_topic else state["question"]}
@@ -150,7 +169,11 @@ def prepare_context_node(state: ChatInput) -> dict:
 
 async def generate_node(state: ChatState) -> dict:
     """Call the LLM with the full context and return its answer."""
-    response = await llm.ainvoke(state["history"])
+    with _tracer.start_as_current_span("gen_ai.generate") as span:
+        span.set_attribute("gen_ai.request.model", settings.openrouter_model)
+        _record_messages(span, state["history"])
+        response = await llm.ainvoke(state["history"])
+        span.add_event("gen_ai.choice", {"content": str(response.content)[:_MAX_EVENT_CONTENT]})
     return {"answer": response.content}
 
 
@@ -267,13 +290,18 @@ async def maybe_summarize(conversation: Conversation, db: AsyncSession) -> None:
     history_text = "\n".join(f"{m.role.upper()}: {m.content}" for m in to_summarize)
     existing = f"Existing summary:\n{conversation.summary}\n\n" if conversation.summary else ""
 
-    result = await llm.ainvoke([
+    summarize_messages = [
         SystemMessage(content=(
             "Produce a concise summary of the conversation below, preserving all key facts, "
             "decisions, and context needed for future responses. Write in third person."
         )),
         HumanMessage(content=f"{existing}Messages to summarize:\n{history_text}"),
-    ])
+    ]
+    with _tracer.start_as_current_span("gen_ai.summarize") as span:
+        span.set_attribute("gen_ai.request.model", settings.openrouter_model)
+        _record_messages(span, summarize_messages)
+        result = await llm.ainvoke(summarize_messages)
+        span.add_event("gen_ai.choice", {"content": str(result.content)[:_MAX_EVENT_CONTENT]})
     conversation.summary = result.content
 
     for msg in to_summarize:
