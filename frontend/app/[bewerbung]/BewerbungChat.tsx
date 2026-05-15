@@ -224,6 +224,11 @@ export default function BewerbungChat({ exampleQuestions }: { exampleQuestions: 
             Send
           </button>
         </form>
+        <div className="flex justify-center mt-2">
+          <a href="/datenschutz" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 underline">
+            Datenschutz
+          </a>
+        </div>
       </div>
     </div>
   );
